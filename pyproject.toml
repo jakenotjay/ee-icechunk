@@ -1,0 +1,14 @@
+[project]
+name = "ee-icechunk"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dask>=2025.9.1",
+    "earthengine-api>=1.6.8",
+    "icechunk>=1.1.5",
+    "odc-geo>=0.4.10",
+    "xarray>=2025.9.0",
+    "xee>=0.0.20",
+]
