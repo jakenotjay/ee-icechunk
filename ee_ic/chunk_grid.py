@@ -33,6 +33,8 @@ class ChunkGrid:
         crs: str = "EPSG:3857",
         chunk_size: tuple[int, int] = (1000, 1000),
         region_size: tuple[int, int] = (4000, 4000),
+        x_dim: str = "lon",
+        y_dim: str = "lat",
     ):
         self.xmin = xmin
         self.xmax = xmax
@@ -43,6 +45,9 @@ class ChunkGrid:
         self.chunk_size = chunk_size
         self.region_size = region_size
         self._geobox = None
+
+        self.x_dim = x_dim
+        self.y_dim = y_dim
 
     @property
     def dst_crs(self) -> CRS:
@@ -88,25 +93,39 @@ class ChunkGrid:
         return self.geobox.height, self.geobox.width
 
     def get_bounds_from_region(self, region: dict[str, slice]) -> Polygon:
-        """For a given region (in pixels), returns the bounds in the destination CRS"""
+        """For a given region (in pixels), returns the bounds in the destination CRS
+
+        Args:
+            region: The region to get the bounds for
+
+        Returns:
+            Polygon: The bounds of the region
+        """
 
         # check region is within the datacube shape
-        if region["x"].start < 0 or region["y"].start < 0:
+        if region[self.x_dim].start < 0 or region[self.y_dim].start < 0:
             raise ValueError("Region is outside the datacube")
         if (
-            region["x"].stop > self.datacube_shape[1]
-            or region["y"].stop > self.datacube_shape[0]
+            region[self.x_dim].stop > self.datacube_shape[1]
+            or region[self.y_dim].stop > self.datacube_shape[0]
         ):
             raise ValueError("Region is outside the datacube")
 
         affine = self.geobox.affine
-        x_min, y_max = affine * (region["x"].start, region["y"].start)
-        x_max, y_min = affine * (region["x"].stop, region["y"].stop)
+        x_min, y_max = affine * (region[self.x_dim].start, region[self.y_dim].start)
+        x_max, y_min = affine * (region[self.x_dim].stop, region[self.y_dim].stop)
 
         return box(x_min, y_min, x_max, y_max)
 
     def get_region_from_bounds(self, bounds: Polygon) -> dict[str, slice]:
-        """Converts a bounds polygon to a slice of the datacube."""
+        """Converts a bounds polygon to a slice of the datacube.
+
+        Args:
+            bounds: The bounds to convert to a region
+
+        Returns:
+            dict[str, slice]: The region
+        """
         xmin, ymin, xmax, ymax = bounds.bounds
         x_start, y_start = ~self.geobox.affine * (xmin, ymax)
         x_end, y_end = ~self.geobox.affine * (xmax, ymin)
@@ -124,14 +143,12 @@ class ChunkGrid:
             raise ValueError("Region is too small to be processed")
 
         return {
-            "x": slice(x_start, x_end),
-            "y": slice(y_start, y_end),
+            self.x_dim: slice(x_start, x_end),
+            self.y_dim: slice(y_start, y_end),
         }
 
     def get_all_regions(self) -> list[dict[str, slice]]:
         """Returns a list of regions (in pixels) that cover the datacube."""
-        # check x step and y step are integer multiples of the chunk size
-
         x_step, y_step = self.region_size
 
         if x_step % self.chunk_size[1] != 0 or y_step % self.chunk_size[0] != 0:
@@ -139,7 +156,6 @@ class ChunkGrid:
                 "x_step and y_step must be integer multiples of the chunk size"
             )
 
-        # create list of reginos using range
         regions = []
         for y in range(0, self.datacube_shape[0], y_step):
             for x in range(0, self.datacube_shape[1], x_step):
@@ -148,8 +164,8 @@ class ChunkGrid:
 
                 regions.append(
                     {
-                        "x": slice(x, max_x),
-                        "y": slice(y, max_y),
+                        self.x_dim: slice(x, max_x),
+                        self.y_dim: slice(y, max_y),
                     }
                 )
 
@@ -186,8 +202,8 @@ class ChunkGrid:
                 max_y = min(y + region_step_y, y_end, self.datacube_shape[0])
 
                 region = {
-                    "x": slice(x, max_x),
-                    "y": slice(y, max_y),
+                    self.x_dim: slice(x, max_x),
+                    self.y_dim: slice(y, max_y),
                 }
 
                 regions.append(region)
@@ -217,8 +233,22 @@ class ChunkGrid:
         )
 
     def get_ee_bounds(self) -> ee.geometry.Geometry:
-        """Returns an earth engine geometry object for the chunk grid, always in EPSG:4326."""
+        """Returns an earth engine geometry object for the entire chunk grid, always in EPSG:4326."""
         return ee.Geometry.BBox(self.xmin, self.ymin, self.xmax, self.ymax)
+
+    def get_region_ee_bounds(self, region: dict[str, slice]) -> ee.geometry.Geometry:
+        """Returns an earth engine geometry object for a given region slice, always in EPSG:4326."""
+        poly_box = self.get_bounds_from_region(region)
+        x_min, y_min, x_max, y_max = poly_box.bounds
+        return ee.Geometry.BBox(x_min, y_min, x_max, y_max)
+
+    def get_all_region_ee_bounds(self) -> ee.featurecollection.FeatureCollection:
+        """Returns an earth engine feature collection for all regions in the chunk grid."""
+        all_regions = self.get_all_regions()
+        all_regions_ee = [
+            ee.Feature(self.get_region_ee_bounds(region)) for region in all_regions
+        ]
+        return ee.FeatureCollection(all_regions_ee)
 
     def get_template_and_encoding(self, ds: xr.Dataset) -> tuple[xr.Dataset, dict]:
         """From a given xarray dataset, returns a template that can be used to initialize an icechunk store.
@@ -235,8 +265,6 @@ class ChunkGrid:
             tuple[xr.Dataset, dict]: The template and encoding
         """
 
-        y_dim, x_dim = spatial_dims(ds)
-
         has_time = "time" in ds.coords
 
         def template_for_dim(dim: str) -> xr.Dataset:
@@ -248,7 +276,9 @@ class ChunkGrid:
 
             chunk_y_dim, chunk_x_dim = spatial_dims(chunk_array)
 
-            chunk_array = chunk_array.rename({chunk_y_dim: y_dim, chunk_x_dim: x_dim})
+            chunk_array = chunk_array.rename(
+                {chunk_y_dim: self.y_dim, chunk_x_dim: self.x_dim}
+            )
 
             return chunk_array
 
@@ -266,7 +296,11 @@ class ChunkGrid:
             encoding_chunks = (1, encoding_chunks[0], encoding_chunks[1])
 
         for band in list(ds.keys()):
-            indexes = ("time", y_dim, x_dim) if has_time else (y_dim, x_dim)
+            indexes = (
+                ("time", self.y_dim, self.x_dim)
+                if has_time
+                else (self.y_dim, self.x_dim)
+            )
 
             chunk_array = template_for_dim(band)
 
@@ -274,11 +308,11 @@ class ChunkGrid:
             if "spatial_ref" not in coords:
                 coords["spatial_ref"] = chunk_array.spatial_ref
 
-            if y_dim not in coords:
-                coords[y_dim] = chunk_array.coords[y_dim].data
+            if self.y_dim not in coords:
+                coords[self.y_dim] = chunk_array.coords[self.y_dim].data
 
-            if x_dim not in coords:
-                coords[x_dim] = chunk_array.coords[x_dim].data
+            if self.x_dim not in coords:
+                coords[self.x_dim] = chunk_array.coords[self.x_dim].data
 
             band_dictionary[band] = (
                 indexes,
