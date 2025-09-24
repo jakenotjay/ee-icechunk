@@ -248,16 +248,12 @@ class ChunkGrid:
         x_min, y_min, x_max, y_max = self.get_true_bounds()
 
         if self.dst_crs.to_string() == "EPSG:4326":
-            print("Bounds are already in EPSG:4326")
             return ee.Geometry.BBox(x_min, y_min, x_max, y_max)
 
         # first we transform the bounds to 4326
         geoseries = gpd.GeoSeries([box(x_min, y_min, x_max, y_max)], crs=self.dst_crs)
-        print("Transforming bounds, iniital geoseries:", geoseries)
         geoseries = geoseries.to_crs("EPSG:4326")
-        print("Transformed bounds, final geoseries:", geoseries)
         xmin, ymin, xmax, ymax = geoseries.total_bounds
-        print("Total bounds:", xmin, ymin, xmax, ymax)
         return ee.Geometry.BBox(xmin, ymin, xmax, ymax)
 
     def get_region_ee_bounds(self, region: dict[str, slice]) -> ee.geometry.Geometry:
