@@ -4,7 +4,7 @@ from odc.geo.geobox import GeoBox
 from odc.geo.xr import xr_zeros, spatial_dims
 from pyproj import CRS, Proj
 from shapely.geometry import Polygon, box
-import geopandas as gpd
+import geopandas as gpd  # TODO: remove the dependency on geopandas for crs conversion
 import xarray as xr
 import ee
 
@@ -232,9 +232,33 @@ class ChunkGrid:
             ],
         )
 
+    def get_true_bounds(self) -> tuple[float, float, float, float]:
+        """Returns the true bounds of the chunk grid in the destination CRS."""
+        x_pix_min = 0
+        y_pix_min = 0
+        x_pix_max = self.datacube_shape[1]
+        y_pix_max = self.datacube_shape[0]
+        x_min, y_min = self.geobox.affine * (x_pix_min, y_pix_min)
+        x_max, y_max = self.geobox.affine * (x_pix_max, y_pix_max)
+        return x_min, y_min, x_max, y_max
+
     def get_ee_bounds(self) -> ee.geometry.Geometry:
         """Returns an earth engine geometry object for the entire chunk grid, always in EPSG:4326."""
-        return ee.Geometry.BBox(self.xmin, self.ymin, self.xmax, self.ymax)
+
+        x_min, y_min, x_max, y_max = self.get_true_bounds()
+
+        if self.dst_crs.to_string() == "EPSG:4326":
+            print("Bounds are already in EPSG:4326")
+            return ee.Geometry.BBox(x_min, y_min, x_max, y_max)
+
+        # first we transform the bounds to 4326
+        geoseries = gpd.GeoSeries([box(x_min, y_min, x_max, y_max)], crs=self.dst_crs)
+        print("Transforming bounds, iniital geoseries:", geoseries)
+        geoseries = geoseries.to_crs("EPSG:4326")
+        print("Transformed bounds, final geoseries:", geoseries)
+        xmin, ymin, xmax, ymax = geoseries.total_bounds
+        print("Total bounds:", xmin, ymin, xmax, ymax)
+        return ee.Geometry.BBox(xmin, ymin, xmax, ymax)
 
     def get_region_ee_bounds(self, region: dict[str, slice]) -> ee.geometry.Geometry:
         """Returns an earth engine geometry object for a given region slice, always in EPSG:4326."""
