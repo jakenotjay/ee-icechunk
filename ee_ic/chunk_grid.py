@@ -1,5 +1,6 @@
 """Defines the chunk grid class, a mapping of a region of space to pixel coordinates and the writable chunks that cover it."""
 
+from typing import Optional
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import xr_zeros, spatial_dims
 from pyproj import CRS, Proj
@@ -147,8 +148,18 @@ class ChunkGrid:
             self.y_dim: slice(y_start, y_end),
         }
 
-    def get_all_regions(self) -> list[dict[str, slice]]:
-        """Returns a list of regions (in pixels) that cover the datacube."""
+    def get_all_regions(
+        self, ds: Optional[xr.Dataset] = None
+    ) -> list[dict[str, slice]]:
+        """Returns a list of regions (in pixels) that cover the datacube, optionally using the dataset to determine the time dimension."""
+
+        # TODO: this is not an eloquent interface for handling time
+        # I wonder how we implement this better within chunk grid?
+        has_time = ds is not None and "time" in ds.coords
+
+        if has_time:
+            time_indices = range(len(ds.time))
+
         x_step, y_step = self.region_size
 
         if x_step % self.chunk_size[1] != 0 or y_step % self.chunk_size[0] != 0:
@@ -162,12 +173,18 @@ class ChunkGrid:
                 max_x = min(x + x_step, self.datacube_shape[1])
                 max_y = min(y + y_step, self.datacube_shape[0])
 
-                regions.append(
-                    {
-                        self.x_dim: slice(x, max_x),
-                        self.y_dim: slice(y, max_y),
-                    }
-                )
+                region = {
+                    self.x_dim: slice(x, max_x),
+                    self.y_dim: slice(y, max_y),
+                }
+
+                if not has_time:
+                    regions.append(region)
+                else:
+                    for t in time_indices:
+                        region_copy = region.copy()
+                        region_copy["time"] = slice(t, t + 1)
+                        regions.append(region_copy)
 
         return regions
 
@@ -234,11 +251,10 @@ class ChunkGrid:
 
     def get_true_bounds(self) -> tuple[float, float, float, float]:
         """Returns the true bounds of the chunk grid in the destination CRS."""
-        x_pix_min = 0
-        y_pix_min = 0
         x_pix_max = self.datacube_shape[1]
         y_pix_max = self.datacube_shape[0]
-        x_min, y_min = self.geobox.affine * (x_pix_min, y_pix_min)
+
+        x_min, y_min = self.geobox.affine * (0, 0)
         x_max, y_max = self.geobox.affine * (x_pix_max, y_pix_max)
         return x_min, y_min, x_max, y_max
 
