@@ -1,4 +1,4 @@
-"""An example of how to use the ee-icechunk library to write the ERA-5 dataset to an icechunk store."""
+"""An example of how to use the ee-icechunk library to write sentinel-2 composites to an icechunk store."""
 
 # TODO: configure the dependencies for this script such that they're only required for the dev
 # as they're not required for the package itself
