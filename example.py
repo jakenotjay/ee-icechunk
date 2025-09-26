@@ -1,5 +1,7 @@
 """An example of how to use the ee-icechunk library to write the ERA-5 dataset to an icechunk store."""
 
+# TODO: configure the dependencies for this script such that they're only required for the dev
+# as they're not required for the package itself
 import ee
 import xarray as xr
 import ee_ic
@@ -9,6 +11,9 @@ from typing import Union
 import dask
 from dask.distributed import Client
 import argparse
+import rioxarray as rxr  # noqa: F401
+import pandas as pd
+from odc.geo.xr import spatial_dims
 
 
 def get_sentinel_2_composites(
@@ -217,6 +222,38 @@ def write_data_to_icechunk(
         print("Committed all regions")
 
 
+def read_data_from_icechunk_as_tiff(repo: ic.Repository):
+    """Writes the data from the icechunk store as a tiff file using the year dimension in the filenames."""
+    session = repo.readonly_session("main")
+
+    with Client():
+        ds = xr.open_dataset(
+            session.store,
+            engine="zarr",
+            consolidated=False,
+            chunks={
+                "lat": 512,
+                "lon": 512,
+                "time": 1,
+            },
+        )
+        y_dim, x_dim = spatial_dims(ds)
+
+        def write_tiff(ds: xr.Dataset):
+            print(ds)
+            tiff_name = pd.to_datetime(ds.time.data)[0].strftime("%Y") + ".tiff"
+            print(tiff_name)
+            tiff_name = f"./s2_{tiff_name}"
+            ds = ds.isel({"time": 0}, drop=True)
+            ds = ds.rename({x_dim: "x", y_dim: "y"})
+            ds.rio.to_raster(tiff_name)
+            return ds
+
+        print(ds)
+
+        ds.groupby("time").apply(write_tiff)
+
+
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -243,6 +280,7 @@ def main() -> None:
     grid, ds = create_grid_and_dataset()
     repo = setup_repository(args.bucket, args.prefix, grid, ds)
     write_data_to_icechunk(repo, grid, ds)
+    read_data_from_icechunk_as_tiff(repo)
 
     print("Done")
 
