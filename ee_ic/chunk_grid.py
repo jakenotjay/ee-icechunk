@@ -3,9 +3,8 @@
 from typing import Optional
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import xr_zeros, spatial_dims
-from pyproj import CRS, Proj
+from pyproj import CRS, Proj, Transformer
 from shapely.geometry import Polygon, box
-import geopandas as gpd  # TODO: remove the dependency on geopandas for crs conversion
 import xarray as xr
 import ee
 import warnings
@@ -64,12 +63,11 @@ class ChunkGrid:
             warnings.warn(
                 "Target CRS is not projected, computing the geobox in EPSG:3857 and converting to target crs"
             )
-            geoseries = gpd.GeoSeries(
-                [box(self.xmin, self.ymin, self.xmax, self.ymax)], crs=self.dst_crs
+            transformer = Transformer.from_crs(
+                self.dst_crs, CRS.from_string("EPSG:3857"), always_xy=True
             )
-            # convert to 3857
-            geoseries = geoseries.to_crs("EPSG:3857")
-            xmin, ymin, xmax, ymax = geoseries.total_bounds
+            xmin, ymin = transformer.transform(self.xmin, self.ymin)
+            xmax, ymax = transformer.transform(self.xmax, self.ymax)
 
             geobox = GeoBox.from_bbox(
                 (xmin, ymin, xmax, ymax), crs="EPSG:3857", resolution=self.res
@@ -267,10 +265,12 @@ class ChunkGrid:
         if self.dst_crs.to_string() == "EPSG:4326":
             return ee.Geometry.BBox(x_min, y_min, x_max, y_max)
 
-        # first we transform the bounds to 4326
-        geoseries = gpd.GeoSeries([box(x_min, y_min, x_max, y_max)], crs=self.dst_crs)
-        geoseries = geoseries.to_crs("EPSG:4326")
-        xmin, ymin, xmax, ymax = geoseries.total_bounds
+        transformer = Transformer.from_crs(
+            self.dst_crs, CRS.from_string("EPSG:4326"), always_xy=True
+        )
+        xmin, ymin = transformer.transform(x_min, y_min)
+        xmax, ymax = transformer.transform(x_max, y_max)
+
         return ee.Geometry.BBox(xmin, ymin, xmax, ymax)
 
     def get_region_ee_bounds(self, region: dict[str, slice]) -> ee.geometry.Geometry:

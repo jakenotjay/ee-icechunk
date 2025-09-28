@@ -96,22 +96,18 @@ def write_region_to_icechunk(
     session: Union[ic.ForkSession, ic.Session],
     region: dict[str, slice],
     ds: xr.Dataset,
+    project: str,
 ) -> None:
     """Takes the slice from the dataset and writes to the icechunk store."""
+    ee.Initialize(
+        project=project, opt_url="https://earthengine-highvolume.googleapis.com"
+    )
     print(f"Writing region {region} to icechunk")
     ds = ds.isel(**region)
 
     to_icechunk(ds.drop_vars("spatial_ref", errors="ignore"), session, region=region)
     print(f"Wrote region {region} to icechunk")
     return session
-
-
-def setup_earth_engine(project: str) -> None:
-    """Initialize Earth Engine with the given project."""
-    ee.Authenticate(auth_mode="gcloud")
-    ee.Initialize(
-        project=project, opt_url="https://earthengine-highvolume.googleapis.com"
-    )
 
 
 def create_grid_and_dataset() -> tuple[ee_ic.ChunkGrid, xr.Dataset]:
@@ -193,7 +189,7 @@ def setup_repository(
 
 
 def write_data_to_icechunk(
-    repo: ic.Repository, grid: ee_ic.ChunkGrid, ds: xr.Dataset
+    repo: ic.Repository, grid: ee_ic.ChunkGrid, ds: xr.Dataset, project: str
 ) -> None:
     """Write the dataset to icechunk in parallel chunks."""
 
@@ -211,7 +207,7 @@ def write_data_to_icechunk(
 
             tasks.append(
                 dask.delayed(write_region_to_icechunk)(
-                    session=fork, region=region, ds=ds
+                    session=fork, region=region, ds=ds, project=project
                 )
             )
 
@@ -276,10 +272,14 @@ def main() -> None:
     """Main function that orchestrates the entire process."""
     args = parse_arguments()
 
-    setup_earth_engine(args.project)
+    ee.Authenticate(auth_mode="gcloud")
+    ee.Initialize(
+        project=args.project, opt_url="https://earthengine-highvolume.googleapis.com"
+    )
+
     grid, ds = create_grid_and_dataset()
     repo = setup_repository(args.bucket, args.prefix, grid, ds)
-    write_data_to_icechunk(repo, grid, ds)
+    write_data_to_icechunk(repo, grid, ds, args.project)
     read_data_from_icechunk_as_tiff(repo)
 
     print("Done")
