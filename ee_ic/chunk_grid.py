@@ -8,6 +8,7 @@ from shapely.geometry import Polygon, box
 import geopandas as gpd  # TODO: remove the dependency on geopandas for crs conversion
 import xarray as xr
 import ee
+import warnings
 
 
 class ChunkGrid:
@@ -60,8 +61,8 @@ class ChunkGrid:
     def get_geobox(self) -> GeoBox:
         if not self.dst_crs.is_projected:
             # compute the geobox in 3857 first then convert to the target crs
-            print(
-                "Warning: Target CRS is not projected, so will compute geobox in 3857 then convert to target crs"
+            warnings.warn(
+                "Target CRS is not projected, computing the geobox in EPSG:3857 and converting to target crs"
             )
             geoseries = gpd.GeoSeries(
                 [box(self.xmin, self.ymin, self.xmax, self.ymax)], crs=self.dst_crs
