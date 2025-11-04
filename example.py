@@ -188,36 +188,6 @@ def setup_repository(
     return repo
 
 
-def write_data_to_icechunk(
-    repo: ic.Repository, grid: ee_ic.ChunkGrid, ds: xr.Dataset, project: str
-) -> None:
-    """Write the dataset to icechunk in parallel chunks."""
-
-    all_regions = grid.get_all_regions(
-        ds
-    )  # to get as a list of dicts of slices to directly manipulate an array
-    # all_regions_ee = grid.get_all_region_ee_bounds() # to get as a feature collection to use in ee operations
-
-    with Client() as client:
-        session = repo.writable_session("main")
-        tasks = []
-
-        for region in all_regions:
-            fork = session.fork()
-
-            tasks.append(
-                dask.delayed(write_region_to_icechunk)(
-                    session=fork, region=region, ds=ds, project=project
-                )
-            )
-
-        remote_session = dask.compute(*tasks, scheduler=client)
-
-        session.merge(*remote_session)
-        session.commit("Wrote all regions")
-        print("Committed all regions")
-
-
 def read_data_from_icechunk_as_tiff(repo: ic.Repository):
     """Writes the data from the icechunk store as a tiff file using the year dimension in the filenames."""
     session = repo.readonly_session("main")
@@ -279,7 +249,31 @@ def main() -> None:
 
     grid, ds = create_grid_and_dataset()
     repo = setup_repository(args.bucket, args.prefix, grid, ds)
-    write_data_to_icechunk(repo, grid, ds, args.project)
+
+    all_regions = grid.get_all_regions(
+        ds
+    )  # to get as a list of dicts of slices to directly manipulate an array
+    # all_regions_ee = grid.get_all_region_ee_bounds() # to get as a feature collection to use in ee operations
+
+    with Client() as client:
+        session = repo.writable_session("main")
+        tasks = []
+
+        for region in all_regions:
+            fork = session.fork()
+
+            tasks.append(
+                dask.delayed(write_region_to_icechunk)(
+                    session=fork, region=region, ds=ds, project=args.project
+                )
+            )
+
+        remote_session = dask.compute(*tasks, scheduler=client)
+
+        session.merge(*remote_session)
+        session.commit("Wrote all regions")
+        print("Committed all regions")
+
     read_data_from_icechunk_as_tiff(repo)
 
     print("Done")

@@ -1,4 +1,12 @@
-"""Defines the chunk grid class, a mapping of a region of space to pixel coordinates and the writable chunks that cover it."""
+"""Defines the chunk grid class, a mapping of a region of space to pixel coordinates and the writable chunks that cover it.
+
+Definitions:
+
+- Chunk: A group of pixels that are always written together, i.e. the smallest access size for a given zarr file.
+- Region: A group of chunks that are written together, these are grouped together simply to enable quicker writes
+- Chunk Grid: A mapping of a projected space to rows and columns of pixels, grouped by chunks and regions.
+
+"""
 
 from typing import Optional
 from odc.geo.geobox import GeoBox
@@ -117,7 +125,7 @@ class ChunkGrid:
 
         return box(x_min, y_min, x_max, y_max)
 
-    def get_region_from_bounds(self, bounds: Polygon) -> dict[str, slice]:
+    def get_indexes_from_bounds(self, bounds: Polygon) -> dict[str, slice]:
         """Converts a bounds polygon to a slice of the datacube.
 
         Args:
@@ -141,6 +149,28 @@ class ChunkGrid:
         # generate the slices and check their size
         if x_end - x_start == 0 or y_end - y_start == 0:
             raise ValueError("Region is too small to be processed")
+
+        return {
+            self.x_dim: slice(x_start, x_end),
+            self.y_dim: slice(y_start, y_end),
+        }
+
+    # TODO: should this instead be to the nearest chunk?
+    # how do I create utilities that ease the burden of working with regions that don't cover the entire chunk grid
+    def get_region_from_indexes(self, indexes: dict[str, slice]) -> dict[str, slice]:
+        """Converts a slice of the datacube to a region in pixels i.e. it rounds up to the nearest region boundaries snapping to the nearest region."""
+        x_start, x_end = indexes[self.x_dim].start, indexes[self.x_dim].stop
+        y_start, y_end = indexes[self.y_dim].start, indexes[self.y_dim].stop
+
+        x_start = x_start // self.region_size[0] * self.region_size[0]
+        y_start = y_start // self.region_size[1] * self.region_size[1]
+
+        x_end = (
+            (x_end + self.region_size[0]) // self.region_size[0] * self.region_size[0]
+        )
+        y_end = (
+            (y_end + self.region_size[1]) // self.region_size[1] * self.region_size[1]
+        )
 
         return {
             self.x_dim: slice(x_start, x_end),
