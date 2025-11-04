@@ -8,14 +8,15 @@ Definitions:
 
 """
 
-from typing import Optional
+import warnings
+from typing import Any
+
+import ee
+import xarray as xr
 from odc.geo.geobox import GeoBox
-from odc.geo.xr import xr_zeros, spatial_dims
+from odc.geo.xr import spatial_dims, xr_zeros
 from pyproj import CRS, Proj, Transformer
 from shapely.geometry import Polygon, box
-import xarray as xr
-import ee
-import warnings
 
 
 class ChunkGrid:
@@ -69,7 +70,8 @@ class ChunkGrid:
         if not self.dst_crs.is_projected:
             # compute the geobox in 3857 first then convert to the target crs
             warnings.warn(
-                "Target CRS is not projected, computing the geobox in EPSG:3857 and converting to target crs"
+                "Target CRS is not projected, computing the geobox in EPSG:3857 and converting to target crs",
+                stacklevel=2,
             )
             transformer = Transformer.from_crs(
                 self.dst_crs, CRS.from_string("EPSG:3857"), always_xy=True
@@ -120,8 +122,12 @@ class ChunkGrid:
             raise ValueError("Region is outside the datacube")
 
         affine = self.geobox.affine
-        x_min, y_max = affine * (region[self.x_dim].start, region[self.y_dim].start)
-        x_max, y_min = affine * (region[self.x_dim].stop, region[self.y_dim].stop)
+        x_min, y_max = tuple[float, float](
+            affine * (region[self.x_dim].start, region[self.y_dim].start)
+        )
+        x_max, y_min = tuple[float, float](
+            affine * (region[self.x_dim].stop, region[self.y_dim].stop)
+        )
 
         return box(x_min, y_min, x_max, y_max)
 
@@ -135,8 +141,8 @@ class ChunkGrid:
             dict[str, slice]: The region
         """
         xmin, ymin, xmax, ymax = bounds.bounds
-        x_start, y_start = ~self.geobox.affine * (xmin, ymax)
-        x_end, y_end = ~self.geobox.affine * (xmax, ymin)
+        x_start, y_start = tuple[float, float](~self.geobox.affine * (xmin, ymax))  # type: ignore[operator]
+        x_end, y_end = tuple[float, float](~self.geobox.affine * (xmax, ymin))  # type: ignore[operator]
         x_start, y_start = int(x_start), int(y_start)
         x_end, y_end = int(x_end), int(y_end)
 
@@ -151,8 +157,8 @@ class ChunkGrid:
             raise ValueError("Region is too small to be processed")
 
         return {
-            self.x_dim: slice(x_start, x_end),
-            self.y_dim: slice(y_start, y_end),
+            self.x_dim: slice[int, int, Any](x_start, x_end),
+            self.y_dim: slice[int, int, Any](y_start, y_end),
         }
 
     # TODO: should this instead be to the nearest chunk?
@@ -173,13 +179,11 @@ class ChunkGrid:
         )
 
         return {
-            self.x_dim: slice(x_start, x_end),
-            self.y_dim: slice(y_start, y_end),
+            self.x_dim: slice[int, int, Any](x_start, x_end),
+            self.y_dim: slice[int, int, Any](y_start, y_end),
         }
 
-    def get_all_regions(
-        self, ds: Optional[xr.Dataset] = None
-    ) -> list[dict[str, slice]]:
+    def get_all_regions(self, ds: xr.Dataset | None = None) -> list[dict[str, slice]]:
         """Returns a list of regions (in pixels) that cover the datacube, optionally using the dataset to determine the time dimension."""
 
         # TODO: this is not an eloquent interface for handling time
@@ -227,8 +231,8 @@ class ChunkGrid:
         xmin, ymin, xmax, ymax = bounds.bounds
 
         # start from top left hence flipped y
-        x_start, y_start = ~affine * (xmin, ymax)
-        x_end, y_end = ~affine * (xmax, ymin)
+        x_start, y_start = tuple(~affine * (xmin, ymax))  # type: ignore
+        x_end, y_end = tuple(~affine * (xmax, ymin))  # type: ignore
 
         x_start, y_start = int(x_start), int(y_start)
         x_end, y_end = int(x_end), int(y_end)
@@ -283,8 +287,8 @@ class ChunkGrid:
         x_pix_max = self.datacube_shape[1]
         y_pix_max = self.datacube_shape[0]
 
-        x_min, y_min = self.geobox.affine * (0, 0)
-        x_max, y_max = self.geobox.affine * (x_pix_max, y_pix_max)
+        x_min, y_min = tuple(self.geobox.affine * (0, 0))
+        x_max, y_max = tuple(self.geobox.affine * (x_pix_max, y_pix_max))
         return x_min, y_min, x_max, y_max
 
     def get_ee_bounds(self) -> ee.geometry.Geometry:

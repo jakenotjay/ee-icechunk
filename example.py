@@ -2,18 +2,19 @@
 
 # TODO: configure the dependencies for this script such that they're only required for the dev
 # as they're not required for the package itself
-import ee
-import xarray as xr
-import ee_ic
-import icechunk as ic
-from icechunk.xarray import to_icechunk
-from typing import Union
-import dask
-from dask.distributed import Client
 import argparse
-import rioxarray as rxr  # noqa: F401
+
+import dask
+import ee
+import icechunk as ic
 import pandas as pd
+import rioxarray as rxr  # noqa: F401
+import xarray as xr
+from dask.distributed import Client
+from icechunk.xarray import to_icechunk
 from odc.geo.xr import spatial_dims
+
+import ee_ic
 
 
 def get_sentinel_2_composites(
@@ -93,7 +94,7 @@ def get_sentinel_2_composites(
 
 def write_region_to_icechunk(
     *,
-    session: Union[ic.ForkSession, ic.Session],
+    session: ic.ForkSession | ic.Session,
     region: dict[str, slice],
     ds: xr.Dataset,
     project: str,
