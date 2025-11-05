@@ -18,6 +18,8 @@ from odc.geo.xr import spatial_dims, xr_zeros
 from pyproj import CRS, Proj, Transformer
 from shapely.geometry import Polygon, box
 
+from ee_ic.utils import extract_dataset_config
+
 
 class ChunkGrid:
     """Class defining a range of chunks and regions (groups of chunks) to cover for a given catalog.
@@ -31,6 +33,12 @@ class ChunkGrid:
         crs (str): The target crs
         chunk_size (tuple[int, int]): The size of writable chunks in pixels
         region_size (tuple[int, int]): The size of regions in pixels
+        x_dim (str): The name of the x dimension
+        y_dim (str): The name of the y dimension
+        time_dim (str | None): The name of the time dimension (if present)
+        time_coords (Any | None): The time coordinate values (if present)
+        time_chunk_size (int): The chunk size for the time dimension
+        bands (dict[str, Any] | None): Mapping of band names to their dtypes
     """
 
     def __init__(
@@ -45,6 +53,10 @@ class ChunkGrid:
         region_size: tuple[int, int] = (4000, 4000),
         x_dim: str = "lon",
         y_dim: str = "lat",
+        time_dim: str | None = None,
+        time_coords: Any | None = None,
+        time_chunk_size: int = 1,
+        bands: dict[str, Any] | None = None,
     ):
         self.xmin = xmin
         self.xmax = xmax
@@ -58,6 +70,34 @@ class ChunkGrid:
 
         self.x_dim = x_dim
         self.y_dim = y_dim
+
+        self.time_dim = time_dim
+        self.time_coords = time_coords
+        self.time_chunk_size = time_chunk_size
+        self.bands = bands
+
+    def configure_from_dataset(
+        self, ds: xr.Dataset, relaxed: bool = False
+    ) -> "ChunkGrid":
+        """Configure time and band information from a dataset.
+
+        This method is useful when the ChunkGrid is created before the dataset is loaded
+        (e.g., when using the grid's projection and bounds to load Earth Engine data).
+
+        Args:
+            ds: The xarray dataset to extract configuration from
+            relaxed: If True, use relaxed temporal dimension detection
+
+        Returns:
+            Self for method chaining
+        """
+        config = extract_dataset_config(ds, relaxed=relaxed)
+
+        self.time_dim = config["time_dim"]
+        self.time_coords = config["time_coords"]
+        self.bands = config["bands"]
+
+        return self
 
     @property
     def dst_crs(self) -> CRS:
@@ -183,15 +223,16 @@ class ChunkGrid:
             self.y_dim: slice[int, int, Any](y_start, y_end),
         }
 
-    def get_all_regions(self, ds: xr.Dataset | None = None) -> list[dict[str, slice]]:
-        """Returns a list of regions (in pixels) that cover the datacube, optionally using the dataset to determine the time dimension."""
+    def get_all_regions(self) -> list[dict[str, slice]]:
+        """Returns a list of regions (in pixels) that cover the datacube.
 
-        # TODO: this is not an eloquent interface for handling time
-        # I wonder how we implement this better within chunk grid?
-        has_time = ds is not None and "time" in ds.coords
+        If time dimension is configured, returns spatiotemporal regions (one per time step per spatial region).
+        Otherwise, returns spatial-only regions.
 
-        if has_time:
-            time_indices = range(len(ds.time))
+        Returns:
+            list[dict[str, slice]]: List of region specifications as dicts of slices
+        """
+        has_time = self.time_dim is not None and self.time_coords is not None
 
         x_step, y_step = self.region_size
 
@@ -214,9 +255,10 @@ class ChunkGrid:
                 if not has_time:
                     regions.append(region)
                 else:
+                    time_indices = range(len(self.time_coords))  # type: ignore[arg-type]
                     for t in time_indices:
                         region_copy = region.copy()
-                        region_copy["time"] = slice(t, t + 1)
+                        region_copy[self.time_dim] = slice(t, t + 1)  # type: ignore[index]
                         regions.append(region_copy)
 
         return regions
@@ -321,31 +363,40 @@ class ChunkGrid:
         ]
         return ee.FeatureCollection(all_regions_ee)
 
-    def get_template_and_encoding(self, ds: xr.Dataset) -> tuple[xr.Dataset, dict]:
-        """From a given xarray dataset, returns a template that can be used to initialize an icechunk store.
+    def get_template_and_encoding(self) -> tuple[xr.Dataset, dict]:
+        """Returns a template and encoding that can be used to initialize an icechunk store.
 
-        Template is written from the geobox, but uses the datasets coordinate names, and auto-detects the time dimension.
+        Template is written from the geobox and uses the configured band specifications,
+        time dimension, and coordinate names.
 
         This allows you to define a template that covers the entire geobox, without having to
         define an image collection that covers the entire geobox (which may be computationally inefficient).
 
-        Args:
-            ds: The xarray dataset to get the template and encoding for
-
         Returns:
             tuple[xr.Dataset, dict]: The template and encoding
+
+        Raises:
+            ValueError: If bands configuration is not set
         """
+        if self.bands is None:
+            raise ValueError(
+                "Bands configuration is required to generate template. "
+                "Either call configure_from_dataset(ds) or set grid.bands manually."
+            )
 
-        has_time = "time" in ds.coords
+        has_time = self.time_dim is not None and self.time_coords is not None
 
-        def template_for_dim(dim: str) -> xr.Dataset:
-            dim_dtype = ds[dim].dtype
+        def template_for_dim(dim: str, dim_dtype: Any) -> xr.DataArray:
+            time = self.time_coords if has_time else None
 
-            time = ds.time.data if has_time else None
+            chunk_array = xr_zeros(self.geobox, chunks=-1, dtype=dim_dtype, time=time)  # type: ignore
 
-            chunk_array = xr_zeros(self.geobox, chunks=-1, dtype=dim_dtype, time=time)
+            s_dims = spatial_dims(chunk_array)
 
-            chunk_y_dim, chunk_x_dim = spatial_dims(chunk_array)
+            if s_dims is None:
+                raise ValueError("Spatial dimensions not found")
+
+            chunk_y_dim, chunk_x_dim = s_dims
 
             chunk_array = chunk_array.rename(
                 {chunk_y_dim: self.y_dim, chunk_x_dim: self.x_dim}
@@ -358,24 +409,26 @@ class ChunkGrid:
         encoding = {}
 
         if has_time:
-            coords["time"] = ("time", ds.time.data)
+            coords[self.time_dim] = (self.time_dim, self.time_coords)
 
         encoding_chunks = self.chunk_size
 
-        # default chunk size for time is always 1
         if has_time:
-            encoding_chunks = (1, encoding_chunks[0], encoding_chunks[1])
+            encoding_chunks = (
+                self.time_chunk_size,
+                encoding_chunks[0],
+                encoding_chunks[1],
+            )
 
-        for band in list(ds.keys()):
+        for band, band_dtype in self.bands.items():
             indexes = (
-                ("time", self.y_dim, self.x_dim)
+                (self.time_dim, self.y_dim, self.x_dim)
                 if has_time
                 else (self.y_dim, self.x_dim)
             )
 
-            chunk_array = template_for_dim(band)
+            chunk_array = template_for_dim(band, band_dtype)
 
-            # write the first bands spatial ref to the coords
             if "spatial_ref" not in coords:
                 coords["spatial_ref"] = chunk_array.spatial_ref
 

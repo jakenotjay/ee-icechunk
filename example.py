@@ -18,7 +18,7 @@ import ee_ic
 
 
 def get_sentinel_2_composites(
-    bounds: ee.Geometry.Polygon,
+    bounds: ee.Geometry,
     start_date: ee.Date,
     count: int,
     interval: int,
@@ -37,8 +37,8 @@ def get_sentinel_2_composites(
         ee.ImageCollection: The sentinel-2 composites
     """
 
-    start_date: ee.Date = ee.Date(start_date)
-    count: ee.Number = ee.Number(count)
+    start_date = ee.Date(start_date)
+    count = ee.Number(count)
     interval: ee.Number = ee.Number(interval)
     interval_units: ee.String = ee.String(interval_units)
 
@@ -157,6 +157,9 @@ def create_grid_and_dataset() -> tuple[ee_ic.ChunkGrid, xr.Dataset]:
     print("loaded ds")
     print(ds)
 
+    grid.configure_from_dataset(ds)
+    print("configured grid from dataset")
+
     return grid, ds
 
 
@@ -171,7 +174,7 @@ def setup_repository(
         print("Opened existing repository")
     except Exception:
         print("Creating new repository")
-        template, encoding = grid.get_template_and_encoding(ds)
+        template, encoding = grid.get_template_and_encoding()
 
         repo = ic.Repository.create(storage)
         session = repo.writable_session("main")
@@ -251,9 +254,7 @@ def main() -> None:
     grid, ds = create_grid_and_dataset()
     repo = setup_repository(args.bucket, args.prefix, grid, ds)
 
-    all_regions = grid.get_all_regions(
-        ds
-    )  # to get as a list of dicts of slices to directly manipulate an array
+    all_regions = grid.get_all_regions()
     # all_regions_ee = grid.get_all_region_ee_bounds() # to get as a feature collection to use in ee operations
 
     with Client() as client:
