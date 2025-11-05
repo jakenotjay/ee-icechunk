@@ -24,7 +24,7 @@ def temporal_dim(xx: xr.DataArray | xr.Dataset, relaxed: bool = False) -> str | 
     _dims = [str(dim) for dim in xx.dims]
     dims = set[str](_dims)
     for guess in TIME_DIMS:
-        if dims.issuperset(guess):
+        if dims.issuperset({guess}):
             return guess
 
     if not relaxed:
