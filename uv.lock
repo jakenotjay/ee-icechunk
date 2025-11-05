@@ -412,13 +412,11 @@ name = "ee-icechunk"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "dask" },
-    { name = "distributed" },
     { name = "earthengine-api" },
     { name = "icechunk" },
     { name = "odc-geo" },
     { name = "pyproj" },
-    { name = "rioxarray" },
+    { name = "shapely" },
     { name = "xarray" },
     { name = "xee" },
 ]
@@ -426,19 +424,20 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "dask" },
+    { name = "distributed" },
     { name = "pre-commit" },
+    { name = "rioxarray" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "dask", specifier = ">=2025.9.1" },
-    { name = "distributed", specifier = ">=2025.9.1" },
     { name = "earthengine-api", specifier = ">=1.6.8" },
     { name = "icechunk", specifier = ">=1.1.5" },
     { name = "odc-geo", specifier = ">=0.4.10" },
     { name = "pyproj", specifier = ">=3.7.2" },
-    { name = "rioxarray", specifier = ">=0.19.0" },
+    { name = "shapely", specifier = ">=2.1.2" },
     { name = "xarray", specifier = ">=2025.9.0" },
     { name = "xee", specifier = ">=0.0.20" },
 ]
@@ -446,7 +445,10 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.32.1" },
+    { name = "dask", specifier = ">=2025.10.0" },
+    { name = "distributed", specifier = ">=2025.10.0" },
     { name = "pre-commit", specifier = ">=4.3.0" },
+    { name = "rioxarray", specifier = ">=0.20.0" },
     { name = "ruff", specifier = ">=0.14.3" },
 ]
 
