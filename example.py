@@ -163,9 +163,7 @@ def create_grid_and_dataset() -> tuple[ee_ic.ChunkGrid, xr.Dataset]:
     return grid, ds
 
 
-def setup_repository(
-    bucket: str, prefix: str, grid: ee_ic.ChunkGrid, ds: xr.Dataset
-) -> ic.Repository:
+def setup_repository(bucket: str, prefix: str, grid: ee_ic.ChunkGrid) -> ic.Repository:
     """Setup the icechunk repository, creating it if it doesn't exist."""
     storage = ic.gcs_storage(bucket=bucket, prefix=prefix, from_env=True)
 

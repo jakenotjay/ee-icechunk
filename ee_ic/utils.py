@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 from odc.geo.xr import spatial_dims
+from xee.ext import REQUEST_BYTE_LIMIT, EarthEngineStore
 
 TIME_DIMS = ["time", "t"]
 
@@ -105,3 +106,62 @@ def extract_dataset_config(ds: xr.Dataset, relaxed: bool = False) -> dict[str, A
         "time_coords": time_coords,
         "bands": bands,
     }
+
+
+def compute_optimium_threads_per_worker(
+    n_workers: int,
+    max_dtype_bytes: int,
+    max_concurrent_requests: int,
+    n_bands: int,
+    region_width: int,
+    region_height: int,
+    region_depth: int = 1,
+) -> int:
+    """Computes the optimal number of concurrent threads to run per worker,
+    based on the maximum number of concurrent requests that earth engine allows.
+
+    Args:
+        n_workers: The number of workers running in parallel
+        max_dtype_bytes: The size of the largest dtype in the dataset in bytes e.g. np.float32 is 4 bytes
+        max_concurrent_requests: Max number of concurrent requests to EE, defined by your plan
+        number_of_regions: The number of regions to process
+        n_bands: The number of bands in the dataset
+        region_width: the width of the region in pixels
+        region_height: the height of the region in pixels
+        region_depth: the depth of the region in pixels (i.e. number of time steps at once)
+
+    Returns:
+        int: The optimal number of concurrent threads to run per worker
+    """
+
+    auto_chunks = EarthEngineStore._auto_chunks
+    preferred_chunks = auto_chunks(max_dtype_bytes, REQUEST_BYTE_LIMIT)
+    print(f"Preferred chunks: {preferred_chunks}")
+
+    # now we assume that preferred_chunks is essentially the size of a request that XEE will make
+    # we can define a density metric by multiplying height, width and index
+    # request density is the number of pixels in a request before multiplying by the number of bands
+    # and number of bits per pixel
+    request_density = (
+        preferred_chunks["height"]
+        * preferred_chunks["width"]
+        * preferred_chunks["index"]
+    )
+
+    print(f"Request density: {request_density}")
+
+    region_density = region_width * region_height * region_depth * n_bands
+
+    print(f"Region density: {region_density}")
+
+    max_density = max_concurrent_requests * request_density
+
+    print(f"Max density: {max_density}")
+
+    optimal_threads = max_density // region_density
+
+    print(f"Optimal threads: {optimal_threads}")
+
+    threads_per_worker = optimal_threads // n_workers
+
+    return threads_per_worker
