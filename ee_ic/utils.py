@@ -97,15 +97,58 @@ def extract_dataset_config(ds: xr.Dataset, relaxed: bool = False) -> dict[str, A
             - time_dim: str | None - name of time dimension
             - time_coords: array-like | None - time coordinate values
             - bands: dict[str, dtype] - mapping of band names to dtypes
+            - max_dtype_bytes: int - the size of the largest dtype in the dataset in bytes e.g. np.float32 is 4 bytes
     """
     time_dim, time_coords = extract_time_config(ds, relaxed=relaxed)
     bands = extract_band_config(ds)
+
+    max_dtype_bytes = max([np.dtype(val).itemsize for val in bands.values()])
 
     return {
         "time_dim": time_dim,
         "time_coords": time_coords,
         "bands": bands,
+        "max_dtype_bytes": max_dtype_bytes,
     }
+
+
+def recommend_io_chunks(max_dtype_bytes: int, n_time_steps: int) -> dict[str, int]:
+    """Earth Engine has a maximum request size of 48MB, we can use this to
+    recommend a chunk size, when making requests to the earth engine backend.
+
+    Earth Engine's requesting backend splits requests into tiles, tiles are PER band and they convert image collections into individual images, with bands
+    for the time dimension.
+
+    Therefore we prefer to group time steps together.
+
+    Inspired by _auto_chunks from xee.
+
+    TODO: provide a use case where we don't maximimise the number of timesteps
+    for denser requests i.e. provide a grouping function based on a minimum chunk size
+    """
+    log_budget = np.log2(REQUEST_BYTE_LIMIT)
+
+    log_dtype = np.log2(max_dtype_bytes + 1)  # + 1 because ee ships a mask byte
+
+    budget = log_budget - log_dtype
+
+    log_time = np.log2(n_time_steps)
+
+    budget_without_time = budget - log_time
+
+    if budget_without_time < 0:
+        raise ValueError(
+            "Budget is too small to fit all time steps into single request"
+        )
+
+    remainder = np.floor(budget_without_time) / 2
+    wd, ht = np.ceil(remainder), np.floor(remainder)
+
+    index = int(n_time_steps)
+    width = int(np.rint(2**wd))
+    height = int(np.rint(2**ht))
+
+    return {"index": index, "width": width, "height": height}
 
 
 def compute_optimium_threads_per_worker(

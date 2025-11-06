@@ -38,7 +38,7 @@ class ChunkGrid:
         y_dim (str): The name of the y dimension
         time_dim (str | None): The name of the time dimension (if present)
         time_coords (Any | None): The time coordinate values (if present)
-        time_chunk_size (int): The chunk size for the time dimension
+        time_region-size (int): The size of time regions to write at once
         bands (dict[str, Any] | None): Mapping of band names to their dtypes
     """
 
@@ -56,7 +56,7 @@ class ChunkGrid:
         y_dim: str = "lat",
         time_dim: str | None = None,
         time_coords: Any | None = None,
-        time_chunk_size: int = 1,
+        time_region_size: int = 1,
         bands: dict[str, Any] | None = None,
     ):
         self.xmin = xmin
@@ -74,11 +74,11 @@ class ChunkGrid:
 
         self.time_dim = time_dim
         self.time_coords = time_coords
-        self.time_chunk_size = time_chunk_size
+        self.time_region_size = time_region_size
         self.bands = bands
 
     def __repr__(self) -> str:
-        return f"ChunkGrid(xmin={self.xmin}, xmax={self.xmax}, ymin={self.ymin}, ymax={self.ymax}, res={self.res}, crs={self.crs}, chunk_size={self.chunk_size}, region_size={self.region_size}, x_dim={self.x_dim}, y_dim={self.y_dim}, time_dim={self.time_dim}, time_coords={self.time_coords}, time_chunk_size={self.time_chunk_size}, bands={self.bands})"
+        return f"ChunkGrid(xmin={self.xmin}, xmax={self.xmax}, ymin={self.ymin}, ymax={self.ymax}, res={self.res}, crs={self.crs}, chunk_size={self.chunk_size}, region_size={self.region_size}, x_dim={self.x_dim}, y_dim={self.y_dim}, time_dim={self.time_dim}, time_coords={self.time_coords}, time_region_size={self.time_region_size}, bands={self.bands})"
 
     def configure_from_dataset(
         self, ds: xr.Dataset, relaxed: bool = False
@@ -264,7 +264,9 @@ class ChunkGrid:
                 if not self.has_time:
                     regions.append(region)
                 else:
-                    time_indices = range(len(self.time_coords))  # pyright: ignore[reportArgumentType]
+                    time_indices = range(
+                        0, len(self.time_coords), self.time_region_size
+                    )  # pyright: ignore[reportArgumentType]
                     for t in time_indices:
                         region_copy = region.copy()
                         region_copy[self.time_dim] = slice(t, t + 1)  # pyright: ignore[reportArgumentType]
@@ -293,7 +295,9 @@ class ChunkGrid:
                 if not self.has_time:
                     regions.append(region)
                 else:
-                    time_indices = range(len(self.time_coords))  # pyright: ignore[reportArgumentType]
+                    time_indices = range(
+                        0, len(self.time_coords), self.time_region_size
+                    )  # pyright: ignore[reportArgumentType]
                     for t in time_indices:
                         region_copy = region.copy()
                         region_copy[self.time_dim] = slice(t, t + 1)  # pyright: ignore[reportArgumentType]
@@ -330,7 +334,9 @@ class ChunkGrid:
                 if not self.has_time:
                     regions.append(region)
                 else:
-                    time_indices = range(len(self.time_coords))  # pyright: ignore[reportArgumentType]
+                    time_indices = range(
+                        0, len(self.time_coords), self.time_region_size
+                    )  # pyright: ignore[reportArgumentType]
                     for t in time_indices:
                         region_copy = region.copy()
                         region_copy[self.time_dim] = slice(t, t + 1)  # pyright: ignore[reportArgumentType]
@@ -502,7 +508,7 @@ class ChunkGrid:
 
         if self.has_time:
             encoding_chunks = (
-                self.time_chunk_size,
+                1,
                 encoding_chunks[0],
                 encoding_chunks[1],
             )
