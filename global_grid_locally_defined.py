@@ -49,6 +49,8 @@ def write_region_to_icechunk(
 
 def create_grid_and_dataset(
     intended_bounds: shapely.geometry.Polygon,
+    chunk_size: tuple[int, int],
+    region_size: tuple[int, int],
 ) -> tuple[ee_ic.ChunkGrid, xr.Dataset]:
     """Creates the chunk grid and loads the dataset."""
     start_date = ee.Date("2020-01-01")
@@ -71,8 +73,8 @@ def create_grid_and_dataset(
         grid_ymax,
         res=target_res,
         crs=target_crs,
-        chunk_size=(512, 512),
-        region_size=(1024, 1024),
+        chunk_size=chunk_size,
+        region_size=region_size,
     )
 
     grid_aligned_ee_bounds = grid.get_grid_aligned_ee_bounds(intended_bounds)
@@ -180,6 +182,30 @@ def main() -> None:
         required=True,
         help="Prefix for the icechunk store (default: embeddings_global)",
     )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        required=True,
+        help="Chunk size for the icechunk store (default: 512)",
+    )
+    parser.add_argument(
+        "--region-size",
+        type=int,
+        required=True,
+        help="Region size for the icechunk store (default: 1024)",
+    )
+    parser.add_argument(
+        "--n-workers",
+        type=int,
+        required=True,
+        help="Number of workers to use (default: 4)",
+    )
+    parser.add_argument(
+        "--threads-per-worker",
+        type=int,
+        required=True,
+        help="Number of threads per worker (default: 4)",
+    )
     args = parser.parse_args()
 
     bucket = args.bucket
@@ -199,7 +225,12 @@ def main() -> None:
     )
     intended_bounds = box(xmin, ymin, xmax, ymax)
 
-    grid, ds = create_grid_and_dataset(intended_bounds)
+    chunk_size = (args.chunk_size, args.chunk_size)
+    region_size = (args.region_size, args.region_size)
+
+    grid, ds = create_grid_and_dataset(intended_bounds, chunk_size, region_size)
+
+    print(f"Dataset: {ds}")
 
     print(f"Got dataset with lon and lat dimension lengths of {ds.sizes}")
     print(
@@ -212,19 +243,21 @@ def main() -> None:
 
     verify_region_shapes(regions, local_regions, grid)
 
-    threads_per_worker = ee_ic.utils.compute_optimium_threads_per_worker(
-        n_workers=4,
-        max_dtype_bytes=8,
-        max_concurrent_requests=500,
-        n_bands=64,
-        region_width=1024,
-        region_height=1024,
-        region_depth=5,
-    )
+    # threads_per_worker = ee_ic.utils.compute_optimium_threads_per_worker(
+    #     n_workers=4,
+    #     max_dtype_bytes=8,
+    #     max_concurrent_requests=500,
+    #     n_bands=64,
+    #     region_width=1024,
+    #     region_height=1024,
+    #     region_depth=5,
+    # )
 
-    print(f"Threads per worker: {threads_per_worker}")
+    # print(f"Threads per worker: {threads_per_worker}")
 
-    with LocalCluster(n_workers=4, threads_per_worker=4) as cluster:
+    with LocalCluster(
+        n_workers=args.n_workers, threads_per_worker=args.threads_per_worker
+    ) as cluster:
         with Client(cluster) as client:
             session = repo.writable_session("main")
 
@@ -251,4 +284,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import time
+
+    tik = time.time()
     main()
+    tok = time.time()
+    print(f"Time taken: {tok - tik} seconds")

@@ -161,6 +161,7 @@ def compute_optimium_threads_per_worker(
     optimal_threads = max_density // region_density
 
     print(f"Optimal threads: {optimal_threads}")
+    optimal_threads = min(optimal_threads, max_concurrent_requests)
 
     threads_per_worker = optimal_threads // n_workers
 
