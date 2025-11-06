@@ -15,7 +15,6 @@ import ee
 import shapely
 import xarray as xr
 from odc.geo.geobox import GeoBox
-from odc.geo.geom import Geometry
 from odc.geo.xr import spatial_dims, xr_zeros
 from pyproj import CRS, Proj, Transformer
 from shapely.geometry import Polygon, box
@@ -280,7 +279,7 @@ class ChunkGrid:
 
         region_step_x, region_step_y = self.region_size
 
-        regions = []
+        regions: list[dict[str, slice]] = []
         for y in range(y_start, y_end, region_step_y):
             for x in range(x_start, x_end, region_step_x):
                 max_x = min(x + region_step_x, x_end, self.datacube_shape[1])
@@ -310,15 +309,18 @@ class ChunkGrid:
         If time dimension is configured, returns spatiotemporal regions.
         Otherwise, returns spatial-only regions.
         """
+        x_start, y_start, x_end, y_end = self.get_grid_aligned_pixel_bounds(bounds)
+
         region_step_x, region_step_y = self.region_size
 
-        sub_geobox = self.geobox.enclosing(Geometry(bounds, crs=self.dst_crs))
+        local_width = x_end - x_start
+        local_height = y_end - y_start
 
         regions: list[dict[str, slice]] = []
-        for y in range(0, sub_geobox.height, region_step_y):
-            for x in range(0, sub_geobox.width, region_step_x):
-                max_x = min(x + region_step_x, sub_geobox.width)
-                max_y = min(y + region_step_y, sub_geobox.height)
+        for y in range(0, local_height, region_step_y):
+            for x in range(0, local_width, region_step_x):
+                max_x = min(x + region_step_x, local_width)
+                max_y = min(y + region_step_y, local_height)
 
                 region = {
                     self.x_dim: slice(x, max_x),
@@ -440,7 +442,6 @@ class ChunkGrid:
         all_bounds = [self.get_bounds_from_region(region) for region in regions]
         combined = shapely.union_all(all_bounds)
         x_min, y_min, x_max, y_max = combined.bounds
-        print(x_min, y_min, x_max, y_max)
         return ee.Geometry.BBox(x_min, y_min, x_max, y_max)
 
     def get_all_region_ee_bounds(self) -> ee.featurecollection.FeatureCollection:
