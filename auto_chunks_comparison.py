@@ -220,6 +220,11 @@ def main() -> None:
         max_concurrent_requests / requests_per_region / n_workers
     )
 
+    print(f"Using region_size {region_size} and time_region_size {time_region_size}")
+    print(f"Request per region per band: {request_per_region_per_band}")
+    print(f"Requests per region: {requests_per_region}")
+    print(f"Threads per worker: {threads_per_worker}")
+
     repo = setup_repository(bucket, prefix, grid)
     regions = grid.get_all_regions()
 
