@@ -183,14 +183,19 @@ def main() -> None:
     intended_bounds = box(xmin, ymin, xmax, ymax)
 
     if use_recommended_io_chunks:
-        recommended_io_chunks = ee_ic.utils.recommend_io_chunks(
-            max_dtype_bytes=4,
-            n_time_steps=8,
-            min_width=chunk_size[0],
-            min_height=chunk_size[1],
-        )  # 2017 - 2024
+        # recommended_io_chunks = ee_ic.utils.recommend_io_chunks(
+        #     max_dtype_bytes=4,
+        #     n_time_steps=8,
+        #     min_width=chunk_size[0],
+        #     min_height=chunk_size[1],
+        # )  # 2017 - 2024
+        recommended_io_chunks = {
+            "index": 8,
+            "width": chunk_size[0],
+            "height": chunk_size[1],
+        }
 
-        region_size = (recommended_io_chunks["width"], recommended_io_chunks["height"])
+        region_size = (chunk_size[0], chunk_size[1])
         time_region_size = recommended_io_chunks["index"]
         # because we use recommended io chunks we know that each region write should be a single request (per band)
         request_per_region_per_band = 1
