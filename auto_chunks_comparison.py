@@ -165,7 +165,7 @@ def main() -> None:
     bucket = args.bucket
     project = args.project
     prefix = args.prefix
-    chunk_size = args.chunk_size
+    chunk_size = (args.chunk_size, args.chunk_size)
     use_recommended_io_chunks = args.use_recommended_io_chunks
     n_workers = args.n_workers
 
