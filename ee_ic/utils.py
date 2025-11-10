@@ -1,5 +1,6 @@
 from typing import Any
 
+import icechunk as ic
 import numpy as np
 import xarray as xr
 from odc.geo.xr import spatial_dims
@@ -112,7 +113,12 @@ def extract_dataset_config(ds: xr.Dataset, relaxed: bool = False) -> dict[str, A
     }
 
 
-def recommend_io_chunks(max_dtype_bytes: int, n_time_steps: int) -> dict[str, int]:
+def recommend_io_chunks(
+    max_dtype_bytes: int,
+    n_time_steps: int,
+    min_width: int = 512,
+    min_height: int = 512,
+) -> dict[str, int]:
     """Earth Engine has a maximum request size of 48MB, we can use this to
     recommend a chunk size, when making requests to the earth engine backend.
 
@@ -123,8 +129,7 @@ def recommend_io_chunks(max_dtype_bytes: int, n_time_steps: int) -> dict[str, in
 
     Inspired by _auto_chunks from xee.
 
-    TODO: provide a use case where we don't maximimise the number of timesteps
-    for denser requests i.e. provide a grouping function based on a minimum chunk size
+    In the case that the budget is too small to fit the entire temporal dimension, we use the min_width and min_height to allow for smaller requests.
     """
     log_budget = np.log2(REQUEST_BYTE_LIMIT)
 
@@ -136,11 +141,18 @@ def recommend_io_chunks(max_dtype_bytes: int, n_time_steps: int) -> dict[str, in
 
     budget_without_time = budget - log_time
 
-    if budget_without_time < 0:
-        raise ValueError(
-            "Budget is too small to fit all time steps into single request"
-        )
+    log_min_width = np.log2(min_width)
+    log_min_height = np.log2(min_height)
 
+    if budget_without_time - log_min_width - log_min_height < 0:
+        width, height = min_width, min_height
+        wd, ht = np.log2(width), np.log2(height)
+        time_budget = budget - wd - ht
+        index = int(np.rint(2 ** np.floor(time_budget)))
+
+        return {"index": index, "width": width, "height": height}
+
+    # automatically maximises the remaining budget for width and height by rounding to powers of two (even case will result in square, odd case will result in a wide rectangle)
     remainder = np.floor(budget_without_time) / 2
     wd, ht = np.ceil(remainder), np.floor(remainder)
 
@@ -209,3 +221,22 @@ def compute_optimium_threads_per_worker(
     threads_per_worker = optimal_threads // n_workers
 
     return threads_per_worker
+
+
+async def get_written_chunks_set(
+    session: ic.Session, band_name: str
+) -> set[tuple[int, ...]]:
+    """Fetches all written chunks for a given band name (array path) from the icechunk store.
+
+    As per icechunk developers, we should find this performant up to a million chunks being written.
+    https://earthmover-community.slack.com/archives/C07NQCBSTB7/p1759151210655289
+
+    Once we achieve performance issues, we can write a cache of the written chunks to a database.
+    """
+    chunk_set: set[tuple[int, ...]] = set()
+    written_chunks = session.chunk_coordinates(f"/{band_name}")
+
+    async for chunk in written_chunks:
+        chunk_set.add(chunk)
+
+    return chunk_set

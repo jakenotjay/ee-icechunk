@@ -12,6 +12,7 @@ import warnings
 from typing import Any
 
 import ee
+import icechunk as ic
 import shapely
 import xarray as xr
 from odc.geo.geobox import GeoBox
@@ -19,7 +20,7 @@ from odc.geo.xr import spatial_dims, xr_zeros
 from pyproj import CRS, Proj, Transformer
 from shapely.geometry import Polygon, box
 
-from ee_ic.utils import extract_dataset_config
+from ee_ic.utils import extract_dataset_config, get_written_chunks_set
 
 
 class ChunkGrid:
@@ -269,7 +270,9 @@ class ChunkGrid:
                     )  # pyright: ignore[reportArgumentType]
                     for t in time_indices:
                         region_copy = region.copy()
-                        region_copy[self.time_dim] = slice(t, t + 1)  # pyright: ignore[reportArgumentType]
+                        region_copy[self.time_dim] = slice(
+                            t, min(t + self.time_region_size, len(self.time_coords))
+                        )  # pyright: ignore[reportArgumentType]
                         regions.append(region_copy)
 
         return regions
@@ -300,7 +303,9 @@ class ChunkGrid:
                     )  # pyright: ignore[reportArgumentType]
                     for t in time_indices:
                         region_copy = region.copy()
-                        region_copy[self.time_dim] = slice(t, t + 1)  # pyright: ignore[reportArgumentType]
+                        region_copy[self.time_dim] = slice(
+                            t, min(t + self.time_region_size, len(self.time_coords))
+                        )  # pyright: ignore[reportArgumentType]
                         regions.append(region_copy)
 
         return regions
@@ -339,10 +344,48 @@ class ChunkGrid:
                     )  # pyright: ignore[reportArgumentType]
                     for t in time_indices:
                         region_copy = region.copy()
-                        region_copy[self.time_dim] = slice(t, t + 1)  # pyright: ignore[reportArgumentType]
+                        region_copy[self.time_dim] = slice(
+                            t, min(t + self.time_region_size, len(self.time_coords))
+                        )  # pyright: ignore[reportArgumentType]
                         regions.append(region_copy)
 
         return regions
+
+    def region_to_chunk_indices(
+        self,
+        region: dict[str, slice],
+    ) -> list[tuple[int, ...]]:
+        """Convert a region (in pixels) to chunk indices.
+
+        Args:
+            region: Dict with x_dim, y_dim, and optionally time_dim as slices
+
+        Returns:
+            List of chunk coordinate tuples (time_idx, y_idx, x_idx) or (y_idx, x_idx)
+        """
+        chunk_indices: list[tuple[int, ...]] = []
+
+        x_start = region[self.x_dim].start
+        x_end = region[self.x_dim].stop
+        y_start = region[self.y_dim].start
+        y_end = region[self.y_dim].stop
+
+        chunk_width, chunk_height = self.chunk_size
+
+        if self.has_time and self.time_dim in region:
+            time_start = region[self.time_dim].start
+            time_end = region[self.time_dim].stop
+
+            for t in range(time_start, time_end):
+                for y in range(y_start, y_end, chunk_height):
+                    for x in range(x_start, x_end, chunk_width):
+                        chunk_indices.append((t, y // chunk_height, x // chunk_width))
+        else:
+            for y in range(y_start, y_end, chunk_height):
+                for x in range(x_start, x_end, chunk_width):
+                    chunk_indices.append((y // chunk_height, x // chunk_width))
+
+        return chunk_indices
 
     def get_ee_projection(self) -> ee.projection.Projection:
         """Returns an earth engine projection object for the chunk grid."""
@@ -546,3 +589,14 @@ class ChunkGrid:
         template = xr.Dataset(band_dictionary, coords=coords)
 
         return template, encoding
+
+    async def get_written_chunks_set(self, session: ic.Session) -> set[tuple[int, ...]]:
+        """Grabs the set of written chunks for the first band in the datacube."""
+        if self.bands is None:
+            raise ValueError(
+                "Bands configuration is required to get written chunks set."
+            )
+
+        first_band = next(iter(self.bands.keys()))
+
+        return await get_written_chunks_set(session, first_band)
