@@ -186,8 +186,8 @@ def main() -> None:
         recommended_io_chunks = ee_ic.utils.recommend_io_chunks(
             max_dtype_bytes=4,
             n_time_steps=8,
-            min_width=chunk_size,
-            min_height=chunk_size,
+            min_width=chunk_size[0],
+            min_height=chunk_size[1],
         )  # 2017 - 2024
 
         region_size = (recommended_io_chunks["width"], recommended_io_chunks["height"])
