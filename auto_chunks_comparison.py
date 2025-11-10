@@ -196,10 +196,10 @@ def main() -> None:
         request_per_region_per_band = 1
     else:
         recommended_io_chunks = None
-        region_size = (1024, 1024)  # hardcode
+        region_size = (512, 512)  # hardcode
         time_region_size = 8  # given that typically ee will prefer 48 time steps at once, write all times at once
-        # because we use Xee's auto chunks method, we know there are (1024 * 1024) / (256 * 256) = 16 regions per request
-        request_per_region_per_band = 16
+        # because we use Xee's auto chunks method, we know there are (512 * 512) / (256 * 256) = 4 regions per request
+        request_per_region_per_band = 4
 
     grid, ds = create_grid_and_dataset(
         intended_bounds,
@@ -214,6 +214,8 @@ def main() -> None:
     requests_per_region = request_per_region_per_band * n_bands
 
     # saturate the concurrency
+    # this will actually result in 1 per worker in the EE auto_chunk use case
+    # and 2 per worker in the recommended io chunks use case
     threads_per_worker = np.ceil(
         max_concurrent_requests / requests_per_region / n_workers
     )
