@@ -204,7 +204,7 @@ def main() -> None:
         region_size = (512, 512)  # hardcode
         time_region_size = 8  # given that typically ee will prefer 48 time steps at once, write all times at once
         # because we use Xee's auto chunks method, we know there are (512 * 512) / (256 * 256) = 4 regions per request
-        request_per_region_per_band = 4
+        request_per_region_per_band = 1
 
     grid, ds = create_grid_and_dataset(
         intended_bounds,
