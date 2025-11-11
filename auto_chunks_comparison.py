@@ -1,7 +1,6 @@
 """Pulls the embeddings data and stores it, uses a local grid, takes a simple boolean argument to determine whether to use the recommended io_chunks or the auto chunks method, outputs a time in seconds to write the data to icechunk."""
 
 import argparse
-import random
 import time
 
 import dask
@@ -36,12 +35,8 @@ def write_region_to_icechunk(
     region: dict[str, slice],
     ds: xr.Dataset,
     project: str,
-    delay: float = 0,
 ) -> ic.ForkSession | ic.Session:
     """Takes the slice from the dataset and writes to the icechunk store."""
-    if delay > 0:
-        print(f"Delaying for {delay} seconds")
-        time.sleep(delay)
 
     print(f"Writing region {region} to icechunk")
     ee.Initialize(
@@ -211,19 +206,12 @@ def main() -> None:
             session = repo.writable_session("main")
             tasks = []
 
-            num_initial_tasks = n_workers * threads_per_worker
-
-            for idx, region in enumerate(regions):
+            for region in regions:
                 fork = session.fork()
-
-                if idx < num_initial_tasks:
-                    delay = random.uniform(0, 10)
-                else:
-                    delay = 0
 
                 tasks.append(
                     dask.delayed(write_region_to_icechunk)(
-                        session=fork, region=region, ds=ds, project=project, delay=delay
+                        session=fork, region=region, ds=ds, project=project
                     )
                 )
 
