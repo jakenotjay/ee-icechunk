@@ -5,7 +5,6 @@ import argparse
 import dask
 import ee
 import icechunk as ic
-import numpy as np
 import shapely
 import xarray as xr
 from dask.distributed import Client, LocalCluster
@@ -156,9 +155,10 @@ def main() -> None:
         help="Number of workers to use (default: 4)",
     )
     parser.add_argument(
-        "--use-recommended-io-chunks",
-        action="store_true",
-        help="Use the recommended io_chunks method (default: False)",
+        "--threads-per-worker",
+        type=int,
+        required=True,
+        help="Number of threads per worker (default: 1)",
     )
     args = parser.parse_args()
 
@@ -166,8 +166,8 @@ def main() -> None:
     project = args.project
     prefix = args.prefix
     chunk_size = (args.chunk_size, args.chunk_size)
-    use_recommended_io_chunks = args.use_recommended_io_chunks
     n_workers = args.n_workers
+    threads_per_worker = args.threads_per_worker
 
     ee.Authenticate()
     ee.Initialize(
@@ -182,29 +182,9 @@ def main() -> None:
     )
     intended_bounds = box(xmin, ymin, xmax, ymax)
 
-    if use_recommended_io_chunks:
-        # recommended_io_chunks = ee_ic.utils.recommend_io_chunks(
-        #     max_dtype_bytes=4,
-        #     n_time_steps=8,
-        #     min_width=chunk_size[0],
-        #     min_height=chunk_size[1],
-        # )  # 2017 - 2024
-        recommended_io_chunks = {
-            "index": 8,
-            "width": chunk_size[0],
-            "height": chunk_size[1],
-        }
-
-        region_size = (chunk_size[0], chunk_size[1])
-        time_region_size = recommended_io_chunks["index"]
-        # because we use recommended io chunks we know that each region write should be a single request (per band)
-        request_per_region_per_band = 1
-    else:
-        recommended_io_chunks = None
-        region_size = (512, 512)  # hardcode
-        time_region_size = 8  # given that typically ee will prefer 48 time steps at once, write all times at once
-        # because we use Xee's auto chunks method, we know there are (512 * 512) / (256 * 256) = 4 regions per request
-        request_per_region_per_band = 1
+    region_size = (512, 512)
+    time_region_size = 8
+    recommended_io_chunks = None
 
     grid, ds = create_grid_and_dataset(
         intended_bounds,
@@ -213,22 +193,6 @@ def main() -> None:
         time_region_size,
         recommended_io_chunks,
     )
-
-    n_bands = 64
-    max_concurrent_requests = 500
-    requests_per_region = request_per_region_per_band * n_bands
-
-    # saturate the concurrency
-    # this will actually result in 1 per worker in the EE auto_chunk use case
-    # and 2 per worker in the recommended io chunks use case
-    threads_per_worker = np.ceil(
-        max_concurrent_requests / requests_per_region / n_workers
-    )
-
-    print(f"Using region_size {region_size} and time_region_size {time_region_size}")
-    print(f"Request per region per band: {request_per_region_per_band}")
-    print(f"Requests per region: {requests_per_region}")
-    print(f"Threads per worker: {threads_per_worker}")
 
     repo = setup_repository(bucket, prefix, grid)
     regions = grid.get_all_regions()
