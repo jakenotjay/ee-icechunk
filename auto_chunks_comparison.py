@@ -206,14 +206,16 @@ def main() -> None:
             session = repo.writable_session("main")
             tasks = []
 
-            for region in regions:
-                fork = session.fork()
+            region = regions[0]
 
-                tasks.append(
-                    dask.delayed(write_region_to_icechunk)(
-                        session=fork, region=region, ds=ds, project=project
-                    )
+            # for region in regions:
+            fork = session.fork()
+
+            tasks.append(
+                dask.delayed(write_region_to_icechunk)(
+                    session=fork, region=region, ds=ds, project=project
                 )
+            )
 
             remote_session = dask.compute(*tasks, scheduler=client)
 
