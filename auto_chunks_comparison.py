@@ -175,12 +175,13 @@ def main() -> None:
     )
 
     xmin, ymin, xmax, ymax = (
-        35.4607002239093,
-        -16.12147572214461,
-        35.82928740166918,
-        -15.836284989543742,
+        35.208435,
+        -15.89398,
+        35.500946,
+        -15.673288,
     )
     intended_bounds = box(xmin, ymin, xmax, ymax)
+    print(f"Intended bounds: {intended_bounds}")
 
     region_size = (512, 512)
     time_region_size = 8
