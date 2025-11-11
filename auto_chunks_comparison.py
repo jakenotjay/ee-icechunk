@@ -1,6 +1,8 @@
 """Pulls the embeddings data and stores it, uses a local grid, takes a simple boolean argument to determine whether to use the recommended io_chunks or the auto chunks method, outputs a time in seconds to write the data to icechunk."""
 
 import argparse
+import random
+import time
 
 import dask
 import ee
@@ -34,8 +36,12 @@ def write_region_to_icechunk(
     region: dict[str, slice],
     ds: xr.Dataset,
     project: str,
+    delay: float = 0,
 ) -> ic.ForkSession | ic.Session:
     """Takes the slice from the dataset and writes to the icechunk store."""
+    if delay > 0:
+        time.sleep(delay)
+
     print(f"Writing region {region} to icechunk")
     ee.Initialize(
         project=project, opt_url="https://earthengine-highvolume.googleapis.com"
@@ -175,13 +181,12 @@ def main() -> None:
     )
 
     xmin, ymin, xmax, ymax = (
-        35.208435,
-        -15.89398,
-        35.500946,
-        -15.673288,
+        35.4607002239093,
+        -16.12147572214461,
+        35.82928740166918,
+        -15.836284989543742,
     )
     intended_bounds = box(xmin, ymin, xmax, ymax)
-    print(f"Intended bounds: {intended_bounds}")
 
     region_size = (512, 512)
     time_region_size = 8
@@ -205,11 +210,19 @@ def main() -> None:
             session = repo.writable_session("main")
             tasks = []
 
-            for region in regions:
+            num_initial_tasks = n_workers * threads_per_worker
+
+            for idx, region in enumerate(regions):
                 fork = session.fork()
+
+                if idx < num_initial_tasks:
+                    delay = random.uniform(0, 10)
+                else:
+                    delay = 0
+
                 tasks.append(
                     dask.delayed(write_region_to_icechunk)(
-                        session=fork, region=region, ds=ds, project=project
+                        session=fork, region=region, ds=ds, project=project, delay=delay
                     )
                 )
 
