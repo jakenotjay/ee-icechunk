@@ -186,11 +186,7 @@ def main() -> None:
 
     region_size = (512, 512)
     time_region_size = 8
-    recommended_io_chunks = {
-        "index": 8,
-        "width": 512,
-        "height": 512,
-    }
+    recommended_io_chunks = None
 
     grid, ds = create_grid_and_dataset(
         intended_bounds,
