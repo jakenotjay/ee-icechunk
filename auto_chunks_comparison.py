@@ -40,6 +40,7 @@ def write_region_to_icechunk(
 ) -> ic.ForkSession | ic.Session:
     """Takes the slice from the dataset and writes to the icechunk store."""
     if delay > 0:
+        print(f"Delaying for {delay} seconds")
         time.sleep(delay)
 
     print(f"Writing region {region} to icechunk")
