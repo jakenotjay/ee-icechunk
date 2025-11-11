@@ -25,6 +25,8 @@ Key points to note:
 ## Notes on io_chunks, choosing a region size and the number of threads (per worker)
 
 ### io_chunks
+**Based on messing about with various bits, its actually not worth configuring the below, it doesn't make a difference + I don't have an understanding of the underlying bandwidth/request volume that can be made at the moment**
+
 - xee has a concept of io_chunks, these are the number of pixels in a single request that xee will make to earth engine when calling [compute pixels](https://developers.google.com/earth-engine/reference/rest/v1/projects.image/computePixels), this is required because there is a limit of 48MBs per request
 - this is done on a per-band basis, meaning each is "computed" lazily as a separate request and can include many time steps in a single request
 - xee attempts to automatically determine the optimal io_chunks using the [_auto_chunk](https://github.com/google/Xee/blob/e82ecb4d25b2f1ce05d8cd3bf859c43862f1634e/xee/ext.py#L349) method which takes the size of the datatype of the band in bytes (e.g. float32 is 4 bytes + 1 byte for the mask), and returns a dictionary of "index", "width" and "height" values, index being the number of time steps to request at once
